@@ -111,5 +111,5 @@ saved_data/
 
 *.pyc
 
-shahao_models/
-trained-models/
+/shahao_models/
+/trained-models/
