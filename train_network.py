@@ -21,10 +21,11 @@ from utils.dataset_processing import evaluation
 from utils.visualisation.gridshow import gridshow
 from pathlib import Path
 
-GMDATA_PATH = Path.home().joinpath('Project/gmdata')
-DATASET_PATH = GMDATA_PATH.joinpath('datasets/trainsets_shahao')
-INPUT_DATA_PATH = DATASET_PATH.joinpath('gg_data/shahao_data/gmd_tense')
-OUT_PATH = GMDATA_PATH.joinpath('datasets/models/gg2/shahao_data')
+DATASET_PATH = Path.home().joinpath('Project/model')
+# INPUT_DATA_PATH = DATASET_PATH.joinpath('gg_data/shahao_data/gmd_tense')
+INPUT_DATA_PATH = "/media/shahao/F07EE98F7EE94F42/win_stevehao/Research/gmd/shahao_data/gg_data/jaq"
+# OUT_PATH = DATASET_PATH.joinpath('gg2')
+
 
 
 def parse_args():
@@ -33,7 +34,7 @@ def parse_args():
     # Network
     parser.add_argument('--network', type=str, default='grconvnet3',
                         help='Network name in inference/models')
-    parser.add_argument('--input-size', type=int, default=224,
+    parser.add_argument('--input-size', type=int, default=300,
                         help='Input image size for the network')
     parser.add_argument('--use-depth', type=int, default=1,
                         help='Use Depth image for training (1/0)')
@@ -49,8 +50,8 @@ def parse_args():
                         help='Threshold for IOU matching')
 
     # Datasets
-    parser.add_argument('--dataset', type=str,default="jaquard",
-                        help='Dataset Name ("cornell" or "jaquard")')
+    parser.add_argument('--dataset', type=str,default="jacquard",
+                        help='Dataset Name ("cornell" or "jacquard")')
     parser.add_argument('--dataset-path', type=str, default=INPUT_DATA_PATH,
                         help='Path to dataset')
     parser.add_argument('--split', type=float, default=0.9,
@@ -63,12 +64,12 @@ def parse_args():
                         help='Dataset workers')
 
     # Training
-    parser.add_argument('--batch-size', type=int, default=6,
+    parser.add_argument('--batch-size', type=int, default=8,
                         help='Batch size')
     parser.add_argument('--epochs', type=int, default=50,
                         help='Training epochs')
-    parser.add_argument('--batches-per-epoch', type=int, default=1920,
-                        help='Batches per Epoch')
+    parser.add_argument('--batches-per-epoch', type=int, default=1287,
+                        help='Batches per Epoch')#99,1287,1296
     parser.add_argument('--optim', type=str, default='adam',
                         help='Optmizer for the training. (adam or SGD)')
 
@@ -81,7 +82,7 @@ def parse_args():
                         help='Visualise the training process')
     parser.add_argument('--cpu', dest='force_cpu', action='store_true', default=False,
                         help='Force code to run in CPU mode')
-    parser.add_argument('--random-seed', type=int, default=123,
+    parser.add_argument('--random-seed', type=int, default=666,
                         help='Random seed for numpy')
 
     args = parser.parse_args()
@@ -165,9 +166,10 @@ def train(epoch, net, device, train_data, optimizer, batches_per_epoch, vis=Fals
 
     batch_idx = 0
     # Use batches per epoch to make training on different sized datasets (cornell/jacquard) more equivalent.
-    while batch_idx <= batches_per_epoch:
+    while batch_idx < batches_per_epoch:
         for x, y, _, _, _ in train_data:
             batch_idx += 1
+            print("shahao",batch_idx)
             if batch_idx >= batches_per_epoch:
                 break
 
@@ -191,22 +193,25 @@ def train(epoch, net, device, train_data, optimizer, batches_per_epoch, vis=Fals
             optimizer.step()
 
             # Display the images
-            if vis:
-                imgs = []
-                n_img = min(4, x.shape[0])
-                for idx in range(n_img):
-                    imgs.extend([x[idx,].numpy().squeeze()] + [yi[idx,].numpy().squeeze() for yi in y] + [
-                        x[idx,].numpy().squeeze()] + [pc[idx,].detach().cpu().numpy().squeeze() for pc in
-                                                      lossd['pred'].values()])
-                gridshow('Display', imgs,
-                         [(xc.min().item(), xc.max().item()), (0.0, 1.0), (0.0, 1.0), (-1.0, 1.0),
-                          (0.0, 1.0)] * 2 * n_img,
-                         [cv2.COLORMAP_BONE] * 10 * n_img, 10)
-                cv2.waitKey(2)
+            # if vis:
+            #     imgs = []
+            #     n_img = min(4, x.shape[0])
+            #     for idx in range(n_img):
+            #         imgs.extend([x[idx,].numpy().squeeze()] + [yi[idx,].numpy().squeeze() for yi in y] + [
+            #             x[idx,].numpy().squeeze()] + [pc[idx,].detach().cpu().numpy().squeeze() for pc in
+            #                                           lossd['pred'].values()])
+            #     gridshow('Display', imgs,
+            #              [(xc.min().item(), xc.max().item()), (0.0, 1.0), (0.0, 1.0), (-1.0, 1.0),
+            #               (0.0, 1.0)] * 2 * n_img,
+            #              [cv2.COLORMAP_BONE] * 10 * n_img, 10)
+            #     cv2.waitKey(2)
+        print("epoch finish",batch_idx)
 
+    logging.info("out from xunhuan")
     results['loss'] /= batch_idx
     for l in results['losses']:
         results['losses'][l] /= batch_idx
+    logging.info("out from tongji")
 
     return results
 
@@ -322,7 +327,8 @@ def run():
     for epoch in range(args.epochs):
         logging.info('Beginning Epoch {:02d}'.format(epoch))
         train_results = train(epoch, net, device, train_data, optimizer, args.batches_per_epoch, vis=args.vis)
-
+        
+        logging.info('Log training losses to tensorboard...')
         # Log training losses to tensorboard
         tb.add_scalar('loss/train_loss', train_results['loss'], epoch)
         for n, l in train_results['losses'].items():
