@@ -102,6 +102,8 @@ class GraspRectangles:
                 x, y, theta, w, h = [float(v) for v in l[:-1].split(';')]
                 # index based on row, column (y,x), and the Jacquard dataset's angles are flipped around an axis.
                 grs.append(Grasp(np.array([y, x]), -theta / 180.0 * np.pi, w, h).as_gr)
+        
+        # print("姚诗琪",len(grs),grs[0].center,grs[0].angle,grs[0].length)
         grs = cls(grs)
         grs.scale(scale)
         return grs
@@ -162,13 +164,22 @@ class GraspRectangles:
 
         for gr in self.grs:
             rr, cc = gr.compact_polygon_coords(shape)
+            gr_center = gr.center
+            # print(gr_center,gr.angle,gr.length)
+            # if gr_center[0] <0 or gr_center[1] <0 or gr_center[0] >=300 or gr_center[1] >=300:
+            #     print("wrong center")
+            #     continue  
+            # print("yaoshiqi",gr_center)
             if position:
                 pos_out[rr, cc] = 1.0
+                # pos_out[gr_center[0],gr_center[1]]=1.0
             if angle:
                 ang_out[rr, cc] = gr.angle
+                # pos_out[gr_center[0],gr_center[1]]= gr.angle
             if width:
                 width_out[rr, cc] = gr.length
-
+                # pos_out[gr_center[0],gr_center[1]]= gr.length
+            # print("147")
         return pos_out, ang_out, width_out
 
     def to_array(self, pad_to=0):
@@ -424,19 +435,19 @@ def detect_grasps(q_img, ang_img, width_img=None, no_grasps=1):
     :param no_grasps: Max number of grasps to return
     :return: list of Grasps
     """
-    local_max = peak_local_max(q_img, min_distance=20, threshold_abs=0.2, num_peaks=no_grasps)
+    local_max = peak_local_max(q_img, min_distance=20, threshold_abs=0, num_peaks=no_grasps)#min_distance=20, threshold_abs=0.2
+    print(local_max)
 
     grasps = []
     for grasp_point_array in local_max:
         grasp_point = tuple(grasp_point_array)
 
         grasp_angle = ang_img[grasp_point]
-
+        
         g = Grasp(grasp_point, grasp_angle)
         if width_img is not None:
             g.length = width_img[grasp_point]
             g.width = g.length / 2
 
         grasps.append(g)
-
     return grasps

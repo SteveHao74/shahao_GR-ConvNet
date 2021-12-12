@@ -9,13 +9,19 @@ import numpy as np
 import matplotlib.pyplot as plt
 from shutil import rmtree
 from pathlib import Path
-from ggcnn_torch import GGCNNTorch
-from utils.dataset_processing.grasp import detect_grasps
 
-MODEL_PATH = Path.home().joinpath('Project/gmdata/datasets/models/gg2/shahao_model')#('/Project/gmdata/datasets/models/gg/shahao_data')#('Project/shahao_ggcnn/shahao_data')
+
+from hardware.device import get_device
+from inference.post_process import post_process_output
+from utils.data.camera_data import CameraData
+from utils.dataset_processing.grasp import detect_grasps
+from utils.visualisation.plot import plot_grasp
+
 #MODEL_PATH = GMDATA_PATH.joinpath('')
 #TEST_PATH = GMDATA_PATH.joinpath('datasets/test/test_poses')
 #TEST_OUTPUT = GMDATA_PATH.joinpath('ggtest')
+
+MODEL_PATH = Path.home().joinpath('Project/GR-ConvNet/shahao_models')
 
 
 class Grasp2D(object):
@@ -114,10 +120,51 @@ def get_model(model_path):
     return max_f
 
 
+
+
+
+class GraspGenerator:
+    def __init__(self, saved_model_path, visualize=False):
+        self.saved_model_path = saved_model_path
+        self.model = None
+        self.device = None
+        self.load_model()
+        if visualize:
+            self.fig = plt.figure(figsize=(10, 10))
+        else:
+            self.fig = None
+
+    def load_model(self):
+        print('Loading model... ')
+        self.model = torch.load(self.saved_model_path)
+        # Get the compute device
+        self.device = get_device(force_cpu=False)
+
+    def generate(self,depth):
+        self.cam_data = CameraData(depth.shape[1],depth.shape[0],output_size=300,include_depth=True, include_rgb=False)
+        print("1")
+        x, depth_img, rgb_img = self.cam_data.get_data(depth=depth)
+        # plt.clf()
+        # plt.imshow(depth_img)
+        # plt.colorbar()
+        # plt.savefig("depth_img.png")
+        print("2",np.mean(depth_img),np.std(depth_img))
+        # Predict the grasp pose using the saved model
+        with torch.no_grad():
+            xc = x.to(self.device)
+            print("3")
+            pred = self.model.predict(xc)
+        print("4")
+        q_img, ang_img, width_img = post_process_output(pred['pos'], pred['cos'], pred['sin'], pred['width'])
+        print("5")
+        grasps = detect_grasps(q_img, ang_img, width_img)
+        return grasps,q_img, ang_img, width_img
+
+
 @Pyro4.expose
 class Planer(object):
     def __init__(self, model_path):
-        self.ggcnn = GGCNNTorch(model_path)
+        self.grcnn = GraspGenerator(model_path)
         # self.model_name=model_path.split("/")[-1]#从路径中剪切出模型名并发送给客户端
 
     def plan(self, image, width):
@@ -129,12 +176,15 @@ class Planer(object):
         gs = []
         for _ in range(try_num):
             try:
-                points_out, ang_out, width_out, depth_out = self.ggcnn.predict(im, 300)
-                ggs = detect_grasps(points_out, ang_out, width_img=width_out, no_grasps=1)#这里得到了一系列候选抓取
+                ggs,points_out,_,_ = self.grcnn.generate(im)
                 if len(ggs) == 0:
-                    print("detect_grasps——error")
+                    # plt.clf()
+                    # plt.imshow(points_out)
+                    # plt.colorbar()
+                    # plt.savefig("predict_result.png")
+                    # print("detect_grasps——error")
                     continue
-                print("@@@中心和角度",ggs[0].center ,ggs[0].angle)
+                print("@@@中心,角度,宽度",ggs[0].center ,ggs[0].angle,ggs[0].length)
                 g = Grasp2D.from_jaq(ggs[0].to_jacquard(scale=1))
                 # g.width_px = width
                 
@@ -147,8 +197,15 @@ class Planer(object):
                 gs.append(g)
                 # if q > 0.9:
                 #     break
+
+        # plt.clf()
+        # plt.imshow(points_out)
+        # plt.colorbar()
+        # plt.savefig("predict_result.png")
+        
         if len(gs) == 0:
-            return None
+            return [None, None, None,None,None,points_out]
+            # return None
         g = gs[np.argmax(qs)]#取得是抓取质量最高的抓取
         q = qs[np.argmax(qs)]
         print("width",width)
@@ -159,11 +216,8 @@ class Planer(object):
         print("real_width",np.linalg.norm(p1-p0))
         print('-------------------------')
         print([p0, p1, g.depth, g.depth, q])
-        plt.clf()
-        plt.imshow(points_out)
-        plt.colorbar()
-        plt.savefig("predict_result.png")
-        return [p0, p1, g.depth, g.depth, q]#[0, 0, 0,0, 0,points_out]#
+
+        return [p0, p1, g.depth, g.depth, q,points_out]#[0, 0, 0,0, 0,points_out]#
 
 
 def main(args):
@@ -174,37 +228,16 @@ def main(args):
     Pyro4.Daemon.serveSimple({pp: 'grasp'}, ns=False, host='', port=6665)
 
 
-def test():
-    model_path = get_model(MODEL_PATH.joinpath('gmd'))
-    pp = Planer(model_path)
-    ggcnn = GGCNNTorch(model_path)
-    for p in TEST_PATH.iterdir():
-        if p.joinpath('image.npy').exists():
-            test_im = p.joinpath('image.npy')
-            out_path = TEST_OUTPUT.joinpath(p.name)
-            depth = np.load(test_im)
-            points_out, ang_out, width_out, depth_out = ggcnn.predict(depth, 300)
-            if out_path.exists():
-                rmtree(out_path)
-            out_path.mkdir(parents=True)
-            np.save((out_path.joinpath('points_out.npy')), points_out)
-            np.save((out_path.joinpath('ang_out.npy')), ang_out)
-            np.save((out_path.joinpath('width_out.npy')), width_out)
-            np.save((out_path.joinpath('depth_out.npy')), depth_out)
-            np.save((out_path.joinpath('depth.npy')), depth)
-            gs = plot_output(depth_out, points_out, ang_out, 1, width_out)
-            plt.savefig(out_path.joinpath('result.png'))
-            gj = [g.to_jacquard() for g in gs]
-            np.save((out_path.joinpath('gj.npy')), gj)
-            rr = pp.plan(depth, 90)
-            if rr is not None:
-                np.save((out_path.joinpath('pp.npy')), np.array(rr))
+
+
+
+
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='dataset to npz')
-    parser.add_argument('-m', '--model-name', metavar='gmd', type=str, default='gmd',
-                        help='使用的模型的名字')
+    parser.add_argument('-m', '--model-name', metavar='narrow2_gmd', type=str, default='narrow2_gmd',
+                        help='使用的模型的名字')#sparse_gmd#shahao_jacquard
     parser.add_argument('-t', '--test', action='store_true')
     args = parser.parse_args()
     if args.test:

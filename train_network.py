@@ -23,19 +23,23 @@ from pathlib import Path
 
 DATASET_PATH = Path.home().joinpath('Project/model')
 # INPUT_DATA_PATH = DATASET_PATH.joinpath('gg_data/shahao_data/gmd_tense')
-INPUT_DATA_PATH = "/media/shahao/F07EE98F7EE94F42/win_stevehao/Research/gmd/shahao_data/gg_data/jaq"
+INPUT_DATA_PATH = "/media/shahao/F07EE98F7EE94F42/win_stevehao/Research/gmd/shahao_data/gq_generate_gg"#gg_data/gmd
 # OUT_PATH = DATASET_PATH.joinpath('gg2')
+
 
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train network')
-
+    parser.add_argument('--restore', type=str, default=False,
+                        help='to restore the interrupted model training')
     # Network
     parser.add_argument('--network', type=str, default='grconvnet3',
                         help='Network name in inference/models')
     parser.add_argument('--input-size', type=int, default=300,
                         help='Input image size for the network')
+    parser.add_argument('--output-size', type=int, default=300,
+                        help='output image size for the network')
     parser.add_argument('--use-depth', type=int, default=1,
                         help='Use Depth image for training (1/0)')
     parser.add_argument('--use-rgb', type=int, default=0,
@@ -68,13 +72,13 @@ def parse_args():
                         help='Batch size')
     parser.add_argument('--epochs', type=int, default=50,
                         help='Training epochs')
-    parser.add_argument('--batches-per-epoch', type=int, default=1287,
+    parser.add_argument('--batches-per-epoch', type=int, default=1283,
                         help='Batches per Epoch')#99,1287,1296
     parser.add_argument('--optim', type=str, default='adam',
                         help='Optmizer for the training. (adam or SGD)')
 
     # Logging etc.
-    parser.add_argument('--description', type=str, default='',
+    parser.add_argument('--description', type=str, default='single_gmd',
                         help='Training description')
     parser.add_argument('--logdir', type=str, default='shahao_models/',
                         help='Log directory')
@@ -82,7 +86,7 @@ def parse_args():
                         help='Visualise the training process')
     parser.add_argument('--cpu', dest='force_cpu', action='store_true', default=False,
                         help='Force code to run in CPU mode')
-    parser.add_argument('--random-seed', type=int, default=666,
+    parser.add_argument('--random-seed', type=int, default=52147,
                         help='Random seed for numpy')
 
     args = parser.parse_args()
@@ -110,7 +114,7 @@ def validate(net, device, val_data, iou_threshold):
     }
 
     ld = len(val_data)
-
+    # import pdb; pdb.set_trace()
     with torch.no_grad():
         for x, y, didx, rot, zoom_factor in val_data:
             xc = x.to(device)
@@ -124,9 +128,11 @@ def validate(net, device, val_data, iou_threshold):
                 if ln not in results['losses']:
                     results['losses'][ln] = 0
                 results['losses'][ln] += l.item() / ld
-
+            # import pdb; pdb.set_trace()
+            # print("validate")
             q_out, ang_out, w_out = post_process_output(lossd['pred']['pos'], lossd['pred']['cos'],
                                                         lossd['pred']['sin'], lossd['pred']['width'])
+            # print("validate",q_out)
 
             s = evaluation.calculate_iou_match(q_out,
                                                ang_out,
@@ -135,7 +141,7 @@ def validate(net, device, val_data, iou_threshold):
                                                grasp_width=w_out,
                                                threshold=iou_threshold
                                                )
-
+            # print("validate",s)
             if s:
                 results['correct'] += 1
             else:
@@ -258,7 +264,8 @@ def run():
     logging.info('Loading {} Dataset...'.format(args.dataset.title()))
     Dataset = get_dataset(args.dataset)
     dataset = Dataset(args.dataset_path,
-                      output_size=args.input_size,
+                        input_size=args.input_size, 
+                      output_size=args.output_size,
                       ds_rotate=args.ds_rotate,
                       random_rotate=True,
                       random_zoom=True,
@@ -297,6 +304,12 @@ def run():
     # Load the network
     logging.info('Loading Network...')
     input_channels = 1 * args.use_depth + 3 * args.use_rgb
+
+        
+    # if args.restore :
+    #     retore_path = "/home/shahao/Project/GR-ConvNet/shahao_models/single_gmd/epoch_25_iou_0.66"
+    #     net = torch.load(retore_path)
+
     network = get_network(args.network)
     net = network(
         input_channels=input_channels,

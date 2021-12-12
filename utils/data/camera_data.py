@@ -37,17 +37,20 @@ class CameraData:
 
     @staticmethod
     def numpy_to_torch(s):
-        if len(s.shape) == 2:
+        if len(s.shape) == 3:
             return torch.from_numpy(np.expand_dims(s, 0).astype(np.float32))
         else:
             return torch.from_numpy(s.astype(np.float32))
 
     def get_depth(self, img):
-        depth_img = image.Image(img)
+        depth_img = image.DepthImage(img)
         depth_img.crop(bottom_right=self.bottom_right, top_left=self.top_left)
+        print("crop")
         depth_img.normalise()
+        print("normal")
         # depth_img.resize((self.output_size, self.output_size))
-        depth_img.img = depth_img.img.transpose((2, 0, 1))
+        # depth_img.img = depth_img.img.transpose((1,0))
+        print("transpose")
         return depth_img.img
 
     def get_rgb(self, img, norm=True):
@@ -65,6 +68,7 @@ class CameraData:
         # Load the depth image
         if self.include_depth:
             depth_img = self.get_depth(img=depth)
+            # depth_img = depth
 
         # Load the RGB image
         if self.include_rgb:
@@ -79,7 +83,10 @@ class CameraData:
                     )
                 )
         elif self.include_depth:
-            x = self.numpy_to_torch(depth_img)
+            # x= torch.from_numpy(depth_img.reshape(
+            # 1, 1, self.output_size, self.output_size).astype(np.float32))
+            x = self.numpy_to_torch(np.expand_dims(depth_img, 0))
+            #x = self.numpy_to_torch(depth_img)
         elif self.include_rgb:
             x = self.numpy_to_torch(np.expand_dims(rgb_img, 0))
 
