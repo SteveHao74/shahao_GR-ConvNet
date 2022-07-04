@@ -163,8 +163,11 @@ class GraspRectangles:
             width_out = None
 
         for gr in self.grs:
+            # import pdb; pdb.set_trace()
             rr, cc = gr.compact_polygon_coords(shape)
-            gr_center = gr.center
+            # gr_center = gr.center
+            # # print("186",rr,cc)
+            # # print("147",gr.width)
             # print(gr_center,gr.angle,gr.length)
             # if gr_center[0] <0 or gr_center[1] <0 or gr_center[0] >=300 or gr_center[1] >=300:
             #     print("wrong center")
@@ -175,11 +178,13 @@ class GraspRectangles:
                 # pos_out[gr_center[0],gr_center[1]]=1.0
             if angle:
                 ang_out[rr, cc] = gr.angle
+                
                 # pos_out[gr_center[0],gr_center[1]]= gr.angle
             if width:
                 width_out[rr, cc] = gr.length
                 # pos_out[gr_center[0],gr_center[1]]= gr.length
-            # print("147")
+            # 
+
         return pos_out, ang_out, width_out
 
     def to_array(self, pad_to=0):
@@ -202,7 +207,6 @@ class GraspRectangles:
         """
         points = [gr.points for gr in self.grs]
         return np.mean(np.vstack(points), axis=0).astype(np.int)
-
 
 class GraspRectangle:
     """
@@ -268,6 +272,7 @@ class GraspRectangle:
         :param shape: Output shape
         :return: Indices of pixels within the centre thrid of the grasp rectangle.
         """
+        # import pdb; pdb.set_trace()
         return Grasp(self.center, self.angle, self.length / 3, self.width).as_gr.polygon_coords(shape)
 
     def iou(self, gr, angle_threshold=np.pi / 6):

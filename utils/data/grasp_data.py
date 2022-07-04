@@ -3,7 +3,7 @@ import random
 import numpy as np
 import torch
 import torch.utils.data
-
+import matplotlib.pyplot as plt
 
 class GraspDatasetBase(torch.utils.data.Dataset):
     """
@@ -74,7 +74,14 @@ class GraspDatasetBase(torch.utils.data.Dataset):
 
         pos_img, ang_img, width_img = bbs.draw((self.output_size, self.output_size))
         width_img = np.clip(width_img, 0.0, self.output_size / 2) / (self.output_size / 2)
-
+        
+        # ang_img=ang_img*100
+        # print("pos_img",pos_img)
+        plt.clf()
+        plt.imshow(ang_img)
+        plt.colorbar()
+        plt.savefig("save/"+str(idx)+".png")
+        
         if self.include_depth and self.include_rgb:
             x = self.numpy_to_torch(
                 np.concatenate(

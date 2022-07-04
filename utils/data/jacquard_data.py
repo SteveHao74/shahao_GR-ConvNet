@@ -33,7 +33,7 @@ class JacquardDataset(GraspDatasetBase):
         self.rgb_files = [f.replace('perfect_depth.tiff', 'RGB.png') for f in self.depth_files]
 
     def get_gtbb(self, idx, rot=0, zoom=1.0):
-        gtbbs = grasp.GraspRectangles.load_from_jacquard_file(self.grasp_files[idx], scale=self.output_size / self.input_size)
+        gtbbs = grasp.GraspRectangles.load_from_jacquard_file(self.grasp_files[idx], scale=self.output_size / 1024.0)
         c = self.output_size // 2
         gtbbs.rotate(rot, (c, c))
         gtbbs.zoom(zoom, (c, c))

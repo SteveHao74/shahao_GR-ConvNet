@@ -21,7 +21,7 @@ from utils.visualisation.plot import plot_grasp
 #TEST_PATH = GMDATA_PATH.joinpath('datasets/test/test_poses')
 #TEST_OUTPUT = GMDATA_PATH.joinpath('ggtest')
 
-MODEL_PATH = Path.home().joinpath('Project/GR-ConvNet/shahao_models')
+MODEL_PATH = Path.home().joinpath('Project/GR-ConvNet/shahao_models')#trained-models#shahao_models
 
 
 class Grasp2D(object):
@@ -165,18 +165,37 @@ class GraspGenerator:
 class Planer(object):
     def __init__(self, model_path):
         self.grcnn = GraspGenerator(model_path)
-        # self.model_name=model_path.split("/")[-1]#从路径中剪切出模型名并发送给客户端
+        self.model_name=str(model_path).split("/")[-2]#从路径中剪切出模型名并发送给客户端
 
     def plan(self, image, width):
         random.seed(0)
         np.random.seed(0)
-        im = image.copy()
+        image_r = image.copy()
+
+        if self.model_name == 'shahao_cornell' :#or self.model_name ==  "cornell-randsplit-rgbd-grconvnet3-drop1-ch32":
+            normalize_depth = (image_r-np.mean(image_r)*np.ones(image_r.shape))/np.std(image_r)  * 0.3286912237064953*0.1#0.32395524 #+1.1981683*np.ones(image_r.shape)
+        elif self.model_name == 'sparse_gmd' or self.model_name == "new_gmd" or self.model_name == "narrow2_gmd" or self.model_name == "narrow3_gmd" or self.model_name == "narrow6_gmd"or self.model_name == "tense_gmd"  :# or 'single_gmd' :
+            normalize_depth = (image_r-np.mean(image_r)*np.ones(image_r.shape))/np.std(image_r)* 0.005129744#+0.69948566*np.ones(image_r.shape)
+            # normalize_depth=image_r
+            # normalize_depth = (image_r-np.mean(image_r)*np.ones(image_r.shape))/np.std(image_r)  * 0.015 #+1.5*np.ones(image_r.shape) 
+        elif self.model_name == 'tense_gmd':
+            normalize_depth = (image_r-np.mean(image_r)*np.ones(image_r.shape))/np.std(image_r)  * 0.00478371*0.1
+        elif self.model_name == 'noisy_gmd':
+            normalize_depth = (image_r-np.mean(image_r)*np.ones(image_r.shape))/np.std(image_r)  * 0.007254602793330006
+        elif self.model_name == 'shahao_jacquard'or self.model_name ==  "jacquard-d-grconvnet3-drop0-ch32":
+            normalize_depth = (image_r-np.mean(image_r)*np.ones(image_r.shape))/np.std(image_r)  * 0.0463289169433233*0.1#0.04099764 #+1.5008891*np.ones(image_r.shape)    
+            print("jaq")
+            # normalize_depth = (image_r-np.mean(image_r)*np.ones(image_r.shape))/np.std(image_r)  * 0.015# +1.5*np.ones(image_r.shape)   
+        else:
+            normalize_depth = image_r
+
+        normalize_depth = np.clip((normalize_depth - normalize_depth.mean()), -1, 1).astype(np.float32)
         try_num = 5
         qs = []
         gs = []
         for _ in range(try_num):
             try:
-                ggs,points_out,_,_ = self.grcnn.generate(im)
+                ggs,points_out,ang_img,wid_img = self.grcnn.generate(normalize_depth)
                 if len(ggs) == 0:
                     # plt.clf()
                     # plt.imshow(points_out)
@@ -187,7 +206,6 @@ class Planer(object):
                 print("@@@中心,角度,宽度",ggs[0].center ,ggs[0].angle,ggs[0].length)
                 g = Grasp2D.from_jaq(ggs[0].to_jacquard(scale=1))
                 # g.width_px = width
-                
                 q = points_out[int(g.center[1]), int(g.center[0])]
             except Exception as e:
                 print('--------------------出错了----------------------')
@@ -204,7 +222,7 @@ class Planer(object):
         # plt.savefig("predict_result.png")
         
         if len(gs) == 0:
-            return [None, None, None,None,None,points_out]
+            return [None, None, None,None,None,points_out]#,ang_img,wid_img
             # return None
         g = gs[np.argmax(qs)]#取得是抓取质量最高的抓取
         q = qs[np.argmax(qs)]
@@ -217,7 +235,7 @@ class Planer(object):
         print('-------------------------')
         print([p0, p1, g.depth, g.depth, q])
 
-        return [p0, p1, g.depth, g.depth, q,points_out]#[0, 0, 0,0, 0,points_out]#
+        return [p0, p1, g.depth, g.depth, q,points_out]#,ang_img,wid_img[0, 0, 0,0, 0,points_out]#
 
 
 def main(args):
@@ -236,8 +254,8 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='dataset to npz')
-    parser.add_argument('-m', '--model-name', metavar='narrow2_gmd', type=str, default='narrow2_gmd',
-                        help='使用的模型的名字')#sparse_gmd#shahao_jacquard
+    parser.add_argument('-m', '--model-name', metavar='new_gmd', type=str, default='sparse_gmd',
+                        help='使用的模型的名字')#sparse_gmd#shahao_jacquard#sparse_gmd#jacquard-d-grconvnet3-drop0-ch32#cornell-randsplit-rgbd-grconvnet3-drop1-ch32
     parser.add_argument('-t', '--test', action='store_true')
     args = parser.parse_args()
     if args.test:

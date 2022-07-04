@@ -21,22 +21,24 @@ from utils.dataset_processing import evaluation
 from utils.visualisation.gridshow import gridshow
 from pathlib import Path
 
-DATASET_PATH = Path.home().joinpath('Project/model')
-# INPUT_DATA_PATH = DATASET_PATH.joinpath('gg_data/shahao_data/gmd_tense')
-INPUT_DATA_PATH = "/media/shahao/F07EE98F7EE94F42/win_stevehao/Research/gmd/shahao_data/gq_generate_gg"#gg_data/gmd
-# OUT_PATH = DATASET_PATH.joinpath('gg2')
 
-
+GMDATA_PATH = Path("/media/shahao/F07EE98F7EE94F42/win_stevehao/Research/gmdata")
+DATASET_PATH= GMDATA_PATH.joinpath('datasets')
+INPUT_DATA_PATH = DATASET_PATH.joinpath('train_datasets/gg_data/gmd')#small_data/cor
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train network')
-    parser.add_argument('--restore', type=str, default=False,
-                        help='to restore the interrupted model training')
+    parser.add_argument('--resume', type=str, default=False,
+                        help='to resume the interrupted model training')
+    parser.add_argument('--start-epoch', type=int, default=8,
+                        help='the next epoch to start')
+    parser.add_argument('--resume-path', type=str, default="shahao_models/new_gmd/epoch_07_iou_0.82",
+                        help='to resume the interrupted model training')  
     # Network
     parser.add_argument('--network', type=str, default='grconvnet3',
                         help='Network name in inference/models')
-    parser.add_argument('--input-size', type=int, default=300,
+    parser.add_argument('--input-size', type=int, default=1024,
                         help='Input image size for the network')
     parser.add_argument('--output-size', type=int, default=300,
                         help='output image size for the network')
@@ -58,7 +60,8 @@ def parse_args():
                         help='Dataset Name ("cornell" or "jacquard")')
     parser.add_argument('--dataset-path', type=str, default=INPUT_DATA_PATH,
                         help='Path to dataset')
-    parser.add_argument('--split', type=float, default=0.9,
+    parser.add_argument('--lr', type=float, default=0.0001, help='learning rate')#0.001#gmd0.0001
+    parser.add_argument('--split', type=float, default=0.99,
                         help='Fraction of data for training (remainder is validation)')
     parser.add_argument('--ds-shuffle', action='store_true', default=False,
                         help='Shuffle the dataset')
@@ -70,15 +73,16 @@ def parse_args():
     # Training
     parser.add_argument('--batch-size', type=int, default=8,
                         help='Batch size')
-    parser.add_argument('--epochs', type=int, default=50,
+    parser.add_argument('--epochs', type=int, default=100,
                         help='Training epochs')
-    parser.add_argument('--batches-per-epoch', type=int, default=1283,
+    parser.add_argument('--batches-per-epoch', type=int, default=1416,
                         help='Batches per Epoch')#99,1287,1296
+    parser.add_argument('--val-batches', type=int, default=50, help='Validation Batches')
     parser.add_argument('--optim', type=str, default='adam',
                         help='Optmizer for the training. (adam or SGD)')
 
     # Logging etc.
-    parser.add_argument('--description', type=str, default='single_gmd',
+    parser.add_argument('--description', type=str, default='new_gmd',
                         help='Training description')
     parser.add_argument('--logdir', type=str, default='shahao_models/',
                         help='Log directory')
@@ -93,7 +97,7 @@ def parse_args():
     return args
 
 
-def validate(net, device, val_data, iou_threshold):
+def validate(net, device, val_data, iou_threshold,batches_per_epoch):
     """
     Run validation.
     :param net: Network
@@ -116,7 +120,11 @@ def validate(net, device, val_data, iou_threshold):
     ld = len(val_data)
     # import pdb; pdb.set_trace()
     with torch.no_grad():
+        batch_idx = 0
         for x, y, didx, rot, zoom_factor in val_data:
+            batch_idx += 1
+            if batches_per_epoch is not None and batch_idx >= batches_per_epoch:
+                break
             xc = x.to(device)
             yc = [yy.to(device) for yy in y]
             lossd = net.compute_loss(xc, yc)
@@ -175,7 +183,7 @@ def train(epoch, net, device, train_data, optimizer, batches_per_epoch, vis=Fals
     while batch_idx < batches_per_epoch:
         for x, y, _, _, _ in train_data:
             batch_idx += 1
-            print("shahao",batch_idx)
+            # print("shahao",batch_idx)
             if batch_idx >= batches_per_epoch:
                 break
 
@@ -228,7 +236,10 @@ def run():
     # Set-up output directories
     dt = datetime.datetime.now().strftime('%y%m%d_%H%M')
     # net_desc = '{}_{}'.format(dt, '_'.join(args.description.split()))
-    net_desc = args.description
+    if args.resume : 
+        net_desc= args.resume_path.split("/")[-2]
+    else:
+        net_desc = args.description
     save_folder = os.path.join(args.logdir, net_desc)
     if not os.path.exists(save_folder):
         os.makedirs(save_folder)
@@ -283,7 +294,7 @@ def run():
     logging.info('Training size: {}'.format(len(train_indices)))
     logging.info('Validation size: {}'.format(len(val_indices)))
 
-    # Creating data samplers and loaders
+    # Creating data samplers and loadersparser.add_argument('--val-batches', type=int, default=250, help='Validation Batches')
     train_sampler = torch.utils.data.sampler.SubsetRandomSampler(train_indices)
     val_sampler = torch.utils.data.sampler.SubsetRandomSampler(val_indices)
 
@@ -306,25 +317,27 @@ def run():
     input_channels = 1 * args.use_depth + 3 * args.use_rgb
 
         
-    # if args.restore :
-    #     retore_path = "/home/shahao/Project/GR-ConvNet/shahao_models/single_gmd/epoch_25_iou_0.66"
-    #     net = torch.load(retore_path)
-
-    network = get_network(args.network)
-    net = network(
-        input_channels=input_channels,
-        dropout=args.use_dropout,
-        prob=args.dropout_prob,
-        channel_size=args.channel_size
-    )
+    if args.resume :
+        net = torch.load(args.resume_path)
+        start_epoch = args.start_epoch
+    else :
+        network = get_network(args.network)
+        net = network(
+            input_channels=input_channels,
+            dropout=args.use_dropout,
+            prob=args.dropout_prob,
+            channel_size=args.channel_size
+        )
+        
+        start_epoch = 0
 
     net = net.to(device)
     logging.info('Done')
 
     if args.optim.lower() == 'adam':
-        optimizer = optim.Adam(net.parameters())
+        optimizer = optim.Adam(net.parameters(),lr=args.lr)#0.001
     elif args.optim.lower() == 'sgd':
-        optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
+        optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9)#0.01
     else:
         raise NotImplementedError('Optimizer {} is not implemented'.format(args.optim))
 
@@ -337,7 +350,7 @@ def run():
     f.close()
 
     best_iou = 0.0
-    for epoch in range(args.epochs):
+    for epoch in range(start_epoch,args.epochs):
         logging.info('Beginning Epoch {:02d}'.format(epoch))
         train_results = train(epoch, net, device, train_data, optimizer, args.batches_per_epoch, vis=args.vis)
         
@@ -349,7 +362,7 @@ def run():
 
         # Run Validation
         logging.info('Validating...')
-        test_results = validate(net, device, val_data, args.iou_threshold)
+        test_results = validate(net, device, val_data, args.iou_threshold,args.val_batches)
         logging.info('%d/%d = %f' % (test_results['correct'], test_results['correct'] + test_results['failed'],
                                      test_results['correct'] / (test_results['correct'] + test_results['failed'])))
 
